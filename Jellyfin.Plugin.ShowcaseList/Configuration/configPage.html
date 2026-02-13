@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Showcase List</title>
+</head>
+<body>
+  <div id="ShowcaseListConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
+       data-require="emby-input,emby-button">
+    <div data-role="content">
+      <div class="content-primary">
+
+        <h2>Showcase List</h2>
+        <p class="fieldDescription">
+          This plugin automatically maintains <b>Top 10</b> Movies/Series by rating (CommunityRating, fallback CriticRating/10)
+          and writes their Jellyfin item IDs (one per line) to the configured file.
+        </p>
+
+        <form id="ShowcaseListConfigForm">
+          <div class="inputContainer">
+            <label class="inputLabel inputLabelUnfocused" for="OutputPath">Output path</label>
+            <input id="OutputPath" name="OutputPath" type="text" is="emby-input" />
+            <div class="fieldDescription">Example: /jellyfin/jellyfin-web/list.txt</div>
+          </div>
+
+          <div class="inputContainer">
+            <label class="inputLabel inputLabelUnfocused" for="DebounceSeconds">Debounce (seconds)</label>
+            <input id="DebounceSeconds" name="DebounceSeconds" type="number" is="emby-input" min="0" />
+            <div class="fieldDescription">When many items are imported, rebuild at most once per this window.</div>
+          </div>
+
+          <div class="inputContainer">
+            <label class="inputLabel inputLabelUnfocused" for="MaxItems">Max IDs</label>
+            <input id="MaxItems" name="MaxItems" type="number" is="emby-input" min="1" max="10" disabled />
+            <div class="fieldDescription">Fixed to 10 (as requested).</div>
+          </div>
+
+          <div>
+            <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+              <span>Save</span>
+            </button>
+          </div>
+        </form>
+
+        <hr />
+
+        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+          <button id="RefreshNow" is="emby-button" type="button" class="raised emby-button">
+            <span>Refresh now</span>
+          </button>
+          <button id="LoadPreview" is="emby-button" type="button" class="raised emby-button">
+            <span>Load preview</span>
+          </button>
+        </div>
+
+        <div class="fieldDescription" style="margin-top:10px;">
+          Preview shows what would be written (top rated first).
+        </div>
+
+        <div id="Preview" style="margin-top:10px;"></div>
+
+      </div>
+    </div>
+
+    <script type="text/javascript">
+      var ShowcaseListConfig = {
+        pluginUniqueId: '2d3f6a3e-8b5d-4f43-8d61-7df8c8d3a1b0'
+      };
+
+      function renderPreview(items) {
+        if (!items || !items.length) {
+          document.querySelector('#Preview').innerHTML = '<div class="fieldDescription">No items returned.</div>';
+          return;
+        }
+
+        var html = '<table class="detailTable" style="width:100%">'
+          + '<thead><tr><th style="text-align:left">Title</th><th>Score</th><th style="text-align:left">Id</th></tr></thead><tbody>';
+
+        items.forEach(function (it) {
+          html += '<tr>'
+            + '<td style="text-align:left">' + (it.name || '') + '</td>'
+            + '<td style="text-align:center">' + (it.score != null ? it.score.toFixed(2) : '') + '</td>'
+            + '<td style="font-family:monospace; text-align:left">' + (it.id || '') + '</td>'
+            + '</tr>';
+        });
+
+        html += '</tbody></table>';
+        document.querySelector('#Preview').innerHTML = html;
+      }
+
+      document.querySelector('#ShowcaseListConfigPage')
+        .addEventListener('pageshow', function () {
+          Dashboard.showLoadingMsg();
+          ApiClient.getPluginConfiguration(ShowcaseListConfig.pluginUniqueId).then(function (config) {
+            document.querySelector('#OutputPath').value = config.OutputPath || '';
+            document.querySelector('#DebounceSeconds').value = config.DebounceSeconds != null ? config.DebounceSeconds : 30;
+            document.querySelector('#MaxItems').value = config.MaxItems != null ? config.MaxItems : 10;
+            Dashboard.hideLoadingMsg();
+          });
+        });
+
+      document.querySelector('#ShowcaseListConfigForm')
+        .addEventListener('submit', function (e) {
+          Dashboard.showLoadingMsg();
+          ApiClient.getPluginConfiguration(ShowcaseListConfig.pluginUniqueId).then(function (config) {
+            config.OutputPath = document.querySelector('#OutputPath').value;
+            config.DebounceSeconds = parseInt(document.querySelector('#DebounceSeconds').value || '0', 10);
+            // MaxItems fixed to 10; keep config value consistent.
+            config.MaxItems = 10;
+            config.IncludeUnratedAsZero = true;
+
+            ApiClient.updatePluginConfiguration(ShowcaseListConfig.pluginUniqueId, config).then(function (result) {
+              Dashboard.processPluginConfigurationUpdateResult(result);
+            });
+          });
+
+          e.preventDefault();
+          return false;
+        });
+
+      document.querySelector('#RefreshNow').addEventListener('click', function () {
+        Dashboard.showLoadingMsg();
+        ApiClient.fetch({ url: ApiClient.getUrl('ShowcaseList/refresh'), type: 'POST' }).then(function () {
+          Dashboard.hideLoadingMsg();
+          Dashboard.alert('Refreshed.');
+        }, function (err) {
+          Dashboard.hideLoadingMsg();
+          console.error(err);
+          Dashboard.alert('Refresh failed.');
+        });
+      });
+
+      document.querySelector('#LoadPreview').addEventListener('click', function () {
+        Dashboard.showLoadingMsg();
+        ApiClient.fetch({ url: ApiClient.getUrl('ShowcaseList/preview'), type: 'GET' }).then(function (res) {
+          return res.json();
+        }).then(function (items) {
+          Dashboard.hideLoadingMsg();
+          renderPreview(items);
+        }, function (err) {
+          Dashboard.hideLoadingMsg();
+          console.error(err);
+          Dashboard.alert('Preview failed.');
+        });
+      });
+    </script>
+  </div>
+</body>
+</html>
